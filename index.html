@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Car Finder</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Car Finder">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon.png">
+<style>
+  /* One-screen tool: status card on top, big Park button anchored at the bottom for thumb reach */
+  :root {
+    --bg: #eef2f8; --surface: #ffffff; --fg: #142033; --muted: #5b6b82;
+    --park: #1f5ed6; --park-press: #1749a8; --find: #12805c; --line: #d6deea; --warn: #b4441f;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1420; --surface: #172233; --fg: #e8eef8; --muted: #94a3ba;
+      --park: #3b78ee; --park-press: #2e63c9; --find: #22a374; --line: #26354b; --warn: #ef8a63;
+      color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg); font: 16px/1.4 var(--font);
+    display: flex; flex-direction: column; gap: 16px;
+    padding-block: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-bottom));
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: 18px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .when { font-size: 22px; font-weight: 700; margin: 0; }
+  .meta { color: var(--muted); font-size: 14px; margin: 0; }
+  .coords { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); user-select: all; }
+  input[type=text], input[type=tel] {
+    width: 100%; font: inherit; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+  }
+  .find {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 60px; border-radius: 14px; background: var(--find); color: #fff;
+    font-size: 20px; font-weight: 700; text-decoration: none;
+  }
+  .text {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 52px; border-radius: 14px; border: 2px solid var(--find); color: var(--find);
+    font-size: 18px; font-weight: 700; text-decoration: none; background: transparent;
+  }
+  .phoneBox { display: flex; gap: 8px; }
+  .phoneBox input { flex: 1; min-width: 0; }
+  .phoneBox button { border: 0; border-radius: 12px; background: var(--find); color: #fff; font: 700 16px var(--font); padding: 0 18px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .link { color: var(--park); font-size: 15px; background: none; border: 0; padding: 4px 0; font: inherit; cursor: pointer; text-decoration: underline; }
+  .empty { color: var(--muted); text-align: center; padding: 28px 8px; margin: 0; }
+  .spacer { flex: 1; }
+  #park {
+    border: 0; border-radius: 26px; background: var(--park); color: #fff;
+    min-height: 190px; width: 100%; font: 800 34px/1.1 var(--font); letter-spacing: .02em;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    box-shadow: 0 8px 24px rgba(31,94,214,.3); transition: transform .08s, background .15s;
+  }
+  #park:active { transform: scale(.98); background: var(--park-press); }
+  #park[disabled] { opacity: .75; }
+  #park svg { width: 56px; height: 56px; }
+  .hasSpot #park { min-height: 140px; }
+  .msg { min-height: 1.4em; text-align: center; font-size: 15px; margin: 0; }
+  .msg.err { color: var(--warn); }
+  button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--park); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { #park { transition: none; } }
+</style>
+</head>
+<body>
+  <h1>Car Finder</h1>
+
+  <section class="card" id="saved" hidden>
+    <p class="when" id="when"></p>
+    <p class="meta" id="acc"></p>
+    <div class="coords" id="coords"></div>
+    <input type="text" id="note" placeholder="Note (e.g. Level 3, row B)" autocomplete="off">
+    <form class="phoneBox" id="phoneForm" hidden>
+      <input type="tel" id="phone" placeholder="Your cell number" autocomplete="tel" inputmode="tel">
+      <button type="submit">Save</button>
+    </form>
+    <a class="find" id="apple" href="#">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M10 8.5 7 21h2.2l1.9-7.3 2.4 2.4V21h2v-6.2l-2.3-2.4.7-3 1.6 2.1H19v-2h-2.4l-2-2.7a2 2 0 0 0-2.4-.7L8 8v4h2z"/></svg>
+      Find My Car
+    </a>
+    <a class="text" id="sms" href="#">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2z"/></svg>
+      Text Me My Spot
+    </a>
+    <div class="row">
+      <a class="link" id="google" href="#">Open in Google Maps</a>
+      <button class="link" id="setPhone">Change my number</button>
+      <button class="link" id="undo" hidden>Undo — restore previous spot</button>
+    </div>
+  </section>
+
+  <p class="empty" id="empty">No spot saved yet. Tap the button when you park.</p>
+
+  <div class="spacer"></div>
+  <p class="msg" id="msg" role="status"></p>
+
+  <button id="park" aria-label="Save my parking spot">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.9 6a1.5 1.5 0 0 0-1.4-1h-11a1.5 1.5 0 0 0-1.4 1L3 12v8a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1h12v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-8zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3M5 11l1.5-4.5h11L19 11z"/></svg>
+    <span id="parkLabel">PARK HERE</span>
+  </button>
+
+<script>
+  const KEY = "carfinder.spot";
+  const $ = id => document.getElementById(id);
+  let spot = load();
+  let previous = null;
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; }
+  }
+  function save(s) {
+    try { s ? localStorage.setItem(KEY, JSON.stringify(s)) : localStorage.removeItem(KEY); } catch {}
+  }
+
+  function render() {
+    const has = !!spot;
+    document.body.classList.toggle("hasSpot", has);
+    $("saved").hidden = !has;
+    $("empty").hidden = has;
+    if (!has) return;
+    const d = new Date(spot.time);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    $("when").textContent = "Parked " + (sameDay ? "today" : d.toLocaleDateString([], {weekday: "short", month: "short", day: "numeric"}))
+      + " at " + d.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    $("acc").textContent = "GPS accuracy about ±" + Math.round(spot.acc * 3.281) + " ft";
+    $("coords").textContent = spot.lat.toFixed(6) + ", " + spot.lon.toFixed(6);
+    $("note").value = spot.note || "";
+    $("apple").href = `https://maps.apple.com/?daddr=${spot.lat},${spot.lon}&dirflg=w`;
+    $("google").href = `https://www.google.com/maps/dir/?api=1&destination=${spot.lat},${spot.lon}&travelmode=walking`;
+    $("undo").hidden = !previous;
+    updateSms();
+  }
+
+  // ----- Text Me My Spot -----
+  const PHONE_KEY = "carfinder.phone";
+  function getPhone() { try { return localStorage.getItem(PHONE_KEY) || ""; } catch { return ""; } }
+  function setPhone(p) { try { localStorage.setItem(PHONE_KEY, p); } catch {} }
+
+  function updateSms() {
+    if (!spot) return;
+    const phone = getPhone().replace(/[^\d+]/g, "");
+    $("phoneForm").hidden = !!phone;
+    $("setPhone").hidden = !phone;
+    const when = new Date(spot.time).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    const body = "My car (parked " + when + ")"
+      + (spot.note ? " - " + spot.note : "")
+      + ": https://maps.apple.com/?ll=" + spot.lat.toFixed(6) + "," + spot.lon.toFixed(6) + "&q=My%20Car";
+    $("sms").href = "sms:" + phone + "&body=" + encodeURIComponent(body);
+  }
+
+  $("phoneForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const p = $("phone").value.trim();
+    if (!p.replace(/\D/g, "")) return message("Type your cell number first.", true);
+    setPhone(p);
+    message("Number saved.");
+    updateSms();
+  });
+  $("setPhone").addEventListener("click", () => {
+    $("phone").value = getPhone();
+    $("phoneForm").hidden = false;
+    $("setPhone").hidden = true;
+    $("phone").focus();
+  });
+
+  function message(text, isErr) {
+    $("msg").textContent = text;
+    $("msg").classList.toggle("err", !!isErr);
+  }
+
+  $("park").addEventListener("click", () => {
+    if (!("geolocation" in navigator)) return message("This browser can't read your location.", true);
+    $("park").disabled = true;
+    $("parkLabel").textContent = "Getting location…";
+    message("");
+    navigator.geolocation.getCurrentPosition(pos => {
+      previous = spot;
+      spot = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy, time: Date.now(), note: "" };
+      save(spot);
+      if (navigator.vibrate) navigator.vibrate(60);
+      message("Spot saved.");
+      done();
+    }, err => {
+      const why = err.code === 1
+        ? "Location is blocked. Open Settings → Privacy & Security → Location Services → Safari Websites and choose While Using."
+        : err.code === 3 ? "GPS took too long. Step out from under the roof and try again."
+        : "Couldn't get a GPS fix. Try again.";
+      message(why, true);
+      done();
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+
+    function done() {
+      $("park").disabled = false;
+      $("parkLabel").textContent = "PARK HERE";
+      render();
+    }
+  });
+
+  $("note").addEventListener("input", e => {
+    if (!spot) return;
+    spot.note = e.target.value;
+    save(spot);
+    updateSms();
+  });
+
+  $("undo").addEventListener("click", () => {
+    spot = previous; previous = null;
+    save(spot);
+    message("Previous spot restored.");
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>
